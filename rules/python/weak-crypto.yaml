@@ -1,0 +1,79 @@
+rules:
+  - id: python-weak-hash
+    languages: [python]
+    severity: WARNING
+    message: >-
+      MD5 and SHA-1 are broken for security use (collisions are practical). Use hashlib.sha256 or
+      a password hash (hashlib.scrypt, argon2). If this hash is not a security control (a cache key,
+      a content id), say so with usedforsecurity=False.
+    metadata:
+      category: security
+      bug-class: weak-crypto
+      cwe: ["CWE-328: Use of Weak Hash"]
+      owasp: ["A02:2021 - Cryptographic Failures"]
+      confidence: MEDIUM
+      safe-pattern: hashlib.sha256(data); hashlib.md5(data, usedforsecurity=False) for non-security ids.
+      references:
+        - https://docs.python.org/3/library/hashlib.html
+    patterns:
+      - pattern-either:
+          - pattern: hashlib.md5(...)
+          - pattern: hashlib.sha1(...)
+          - pattern: hashlib.new("md5", ...)
+          - pattern: hashlib.new("sha1", ...)
+          - pattern: hashlib.new("MD5", ...)
+          - pattern: hashlib.new("SHA1", ...)
+      - pattern-not: hashlib.$F(..., usedforsecurity=False, ...)
+
+  - id: python-weak-cipher
+    languages: [python]
+    severity: ERROR
+    message: >-
+      This cipher or mode is broken: DES, 3DES, RC4 and Blowfish are weak, and ECB mode leaks
+      patterns in the plaintext. Use AES-GCM or ChaCha20-Poly1305 (cryptography's AEAD classes).
+    metadata:
+      category: security
+      bug-class: weak-crypto
+      cwe: ["CWE-327: Use of a Broken or Risky Cryptographic Algorithm"]
+      owasp: ["A02:2021 - Cryptographic Failures"]
+      confidence: HIGH
+      safe-pattern: cryptography.hazmat.primitives.ciphers.aead.AESGCM(key).encrypt(nonce, data, aad).
+      references:
+        - https://cryptography.io/en/latest/hazmat/primitives/aead/
+    pattern-either:
+      - pattern: Crypto.Cipher.DES.new(...)
+      - pattern: Crypto.Cipher.DES3.new(...)
+      - pattern: Crypto.Cipher.ARC4.new(...)
+      - pattern: Crypto.Cipher.Blowfish.new(...)
+      - pattern: Crypto.Cipher.AES.new($K, Crypto.Cipher.AES.MODE_ECB, ...)
+      - pattern: Cryptodome.Cipher.DES.new(...)
+      - pattern: Cryptodome.Cipher.ARC4.new(...)
+      - pattern: Cryptodome.Cipher.AES.new($K, Cryptodome.Cipher.AES.MODE_ECB, ...)
+      - pattern: cryptography.hazmat.primitives.ciphers.modes.ECB(...)
+      - pattern: cryptography.hazmat.primitives.ciphers.algorithms.TripleDES(...)
+      - pattern: cryptography.hazmat.primitives.ciphers.algorithms.ARC4(...)
+      - pattern: cryptography.hazmat.primitives.ciphers.algorithms.Blowfish(...)
+
+  - id: python-insecure-random-secret
+    languages: [python]
+    severity: ERROR
+    message: >-
+      $NAME comes from the random module, whose output is predictable. Generate tokens, keys,
+      salts and passwords with the secrets module (secrets.token_urlsafe, secrets.token_bytes).
+    metadata:
+      category: security
+      bug-class: weak-crypto
+      cwe: ["CWE-338: Use of Cryptographically Weak Pseudo-Random Number Generator (PRNG)"]
+      owasp: ["A02:2021 - Cryptographic Failures"]
+      confidence: MEDIUM
+      safe-pattern: secrets.token_urlsafe(32) or secrets.token_bytes(32).
+      references:
+        - https://docs.python.org/3/library/secrets.html
+    patterns:
+      - pattern-either:
+          - pattern: $NAME = random.$F(...)
+          - pattern: $NAME = "...".join(random.$F(...))
+          - pattern: $NAME = "...".join(random.$F(...) for $I in $R)
+      - metavariable-regex:
+          metavariable: $NAME
+          regex: (?i).*(token|secret|password|passwd|nonce|salt|api_?key|session_?id|otp).*

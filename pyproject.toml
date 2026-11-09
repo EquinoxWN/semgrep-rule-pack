@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "semgrep-rule-pack"
+version = "0.1.0"
+description = "Semgrep rules for SQL string building, unsafe deserialization, weak crypto and request-to-sink taint, with a harness that scores every rule against annotated fixtures."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = ["PyYAML>=6.0.2,<7"]
+
+[project.optional-dependencies]
+# Semgrep is pinned so rule behaviour and the recorded results are reproducible.
+semgrep = ["semgrep==1.184.0"]
+dev = [
+    "semgrep==1.184.0",
+    "pytest>=8",
+    "pytest-timeout>=2.3",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "types-PyYAML>=6",
+    "pip-audit>=2.7",
+]
+
+[project.scripts]
+srp = "semgrep_rule_pack.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+timeout = 600
+markers = ["semgrep: runs the real semgrep binary (skipped when it is not installed)"]
+
+[tool.ruff]
+line-length = 100
+extend-exclude = [".tmp", ".venv", "rules"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "S", "SIM", "RUF", "N", "C4", "PT", "RET", "PIE", "PERF"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+"src/semgrep_rule_pack/runner.py" = ["S603"]
+
+[tool.mypy]
+strict = true
+files = ["src", "tests"]
+exclude = ["rules/"]

@@ -1,0 +1,91 @@
+rules:
+  - id: java-sql-string-building
+    languages: [java]
+    severity: WARNING
+    message: >-
+      SQL text passed to $M() is built by string concatenation or String.format. A value spliced into
+      the SQL can change the query. Use a PreparedStatement with ? placeholders, or JPA named
+      parameters.
+    metadata:
+      category: security
+      bug-class: sql-injection
+      cwe: ["CWE-89: Improper Neutralization of Special Elements used in an SQL Command"]
+      owasp: ["A03:2021 - Injection"]
+      confidence: MEDIUM
+      safe-pattern: conn.prepareStatement("... WHERE id = ?") then ps.setString(1, id).
+      references:
+        - https://cheatsheetseries.owasp.org/cheatsheets/Query_Parameterization_Cheat_Sheet.html
+    patterns:
+      - pattern-either:
+          - pattern: $S.$M("..." + $X, ...)
+          - pattern: $S.$M("..." + $X + $Y, ...)
+          - pattern: $S.$M(String.format(...), ...)
+          - patterns:
+              - pattern-inside: |
+                  String $Q = "..." + $X;
+                  ...
+              - pattern: $S.$M($Q, ...)
+          - patterns:
+              - pattern-inside: |
+                  String $Q = "..." + $X + $Y;
+                  ...
+              - pattern: $S.$M($Q, ...)
+          - patterns:
+              - pattern-inside: |
+                  String $Q = String.format(...);
+                  ...
+              - pattern: $S.$M($Q, ...)
+      - metavariable-regex:
+          metavariable: $M
+          regex: ^(executeQuery|executeUpdate|execute|executeLargeUpdate|addBatch|prepareStatement|prepareCall|createQuery|createNativeQuery|queryForList|queryForObject|update)$
+
+  - id: java-unsafe-deserialization
+    languages: [java]
+    severity: ERROR
+    message: >-
+      ObjectInputStream.readObject() and XMLDecoder.readObject() can build any class on the class
+      path, so crafted bytes can run code. Read a data format (JSON with a schema) instead, or set an
+      ObjectInputFilter that allows only the expected classes.
+    metadata:
+      category: security
+      bug-class: unsafe-deserialization
+      cwe: ["CWE-502: Deserialization of Untrusted Data"]
+      owasp: ["A08:2021 - Software and Data Integrity Failures"]
+      confidence: HIGH
+      safe-pattern: ois.setObjectInputFilter(ObjectInputFilter.Config.createFilter("com.example.Dto;!*")).
+      references:
+        - https://docs.oracle.com/en/java/javase/21/core/serialization-filtering1.html
+    pattern-either:
+      - patterns:
+          - pattern: (ObjectInputStream $IN).readObject()
+          - pattern-not-inside: |
+              $IN.setObjectInputFilter(...);
+              ...
+      - pattern: (java.beans.XMLDecoder $D).readObject()
+
+  - id: java-weak-crypto
+    languages: [java]
+    severity: WARNING
+    message: >-
+      $ALG is broken for security use. Use SHA-256 for digests and AES/GCM/NoPadding for
+      encryption ("AES" alone means ECB mode, which leaks patterns).
+    metadata:
+      category: security
+      bug-class: weak-crypto
+      cwe: ["CWE-327: Use of a Broken or Risky Cryptographic Algorithm"]
+      owasp: ["A02:2021 - Cryptographic Failures"]
+      confidence: MEDIUM
+      safe-pattern: MessageDigest.getInstance("SHA-256"); Cipher.getInstance("AES/GCM/NoPadding").
+      references:
+        - https://docs.oracle.com/en/java/javase/21/docs/specs/security/standard-names.html
+    pattern-either:
+      - patterns:
+          - pattern: MessageDigest.getInstance($ALG, ...)
+          - metavariable-regex:
+              metavariable: $ALG
+              regex: (?i)^"(md2|md4|md5|sha-?1|sha)"$
+      - patterns:
+          - pattern: Cipher.getInstance($ALG, ...)
+          - metavariable-regex:
+              metavariable: $ALG
+              regex: (?i)^"((des|desede|tripledes|rc2|rc4|arcfour|blowfish)(/.*)?|aes|[^"]*/ecb/[^"]*)"$

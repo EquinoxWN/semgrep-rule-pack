@@ -1,0 +1,49 @@
+rules:
+  - id: python-sql-string-building
+    languages: [python]
+    severity: WARNING
+    message: >-
+      SQL text passed to $EXEC() is built with string formatting. A value spliced into the SQL can
+      change the query. Pass values as parameters (cursor.execute("... WHERE id = ?", (value,)))
+      and quote identifiers with the driver's identifier helper.
+    metadata:
+      category: security
+      bug-class: sql-injection
+      cwe: ["CWE-89: Improper Neutralization of Special Elements used in an SQL Command"]
+      owasp: ["A03:2021 - Injection"]
+      confidence: MEDIUM
+      safe-pattern: Bound parameters for values; an allowlist or the driver's identifier quoting for names.
+      references:
+        - https://cheatsheetseries.owasp.org/cheatsheets/Query_Parameterization_Cheat_Sheet.html
+    patterns:
+      - pattern-either:
+          - pattern: $DB.$EXEC(f"...{$X}...", ...)
+          - pattern: $DB.$EXEC("..." % $X, ...)
+          - pattern: $DB.$EXEC("...".format(...), ...)
+          - pattern: $DB.$EXEC("..." + $X, ...)
+          - pattern: $DB.$EXEC("..." + $X + $Y, ...)
+          - pattern: $DB.$EXEC($X + "...", ...)
+          - patterns:
+              - pattern-inside: |
+                  $Q = f"...{$X}..."
+                  ...
+              - pattern: $DB.$EXEC($Q, ...)
+          - patterns:
+              - pattern-inside: |
+                  $Q = "..." % $X
+                  ...
+              - pattern: $DB.$EXEC($Q, ...)
+          - patterns:
+              - pattern-inside: |
+                  $Q = "...".format(...)
+                  ...
+              - pattern: $DB.$EXEC($Q, ...)
+          - patterns:
+              - pattern-inside: |
+                  $Q = "..." + $X
+                  ...
+              - pattern: $DB.$EXEC($Q, ...)
+      - pattern-not: $DB.$EXEC("..." + "...", ...)
+      - metavariable-regex:
+          metavariable: $EXEC
+          regex: ^(execute|executemany|executescript|exec_driver_sql|mogrify|raw|sql|query|text)$

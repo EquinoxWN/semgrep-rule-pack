@@ -1,0 +1,167 @@
+rules:
+  - id: go-sql-string-building
+    languages: [go]
+    severity: WARNING
+    message: >-
+      SQL text passed to $DB.$EXEC() is built with fmt.Sprintf or string concatenation. A value
+      spliced into the SQL can change the query. Use placeholders (numbered or ?) for values and quote
+      identifiers (pgx.Identifier{name}.Sanitize()).
+    metadata:
+      category: security
+      bug-class: sql-injection
+      cwe: ["CWE-89: Improper Neutralization of Special Elements used in an SQL Command"]
+      owasp: ["A03:2021 - Injection"]
+      confidence: MEDIUM
+      safe-pattern: db.QueryContext(ctx, "SELECT ... WHERE id = ?", id).
+      references:
+        - https://go.dev/doc/database/sql-injection
+    patterns:
+      - pattern-either:
+          - patterns:
+              - pattern-either:
+                  - pattern: $DB.$EXEC(fmt.Sprintf(...), ...)
+                  - pattern: $DB.$EXEC("..." + $X, ...)
+                  - pattern: $DB.$EXEC("..." + $X + $Y, ...)
+                  - patterns:
+                      - pattern-inside: |
+                          $Q := fmt.Sprintf(...)
+                          ...
+                      - pattern: $DB.$EXEC($Q, ...)
+                  - patterns:
+                      - pattern-inside: |
+                          $Q := "..." + $X
+                          ...
+                      - pattern: $DB.$EXEC($Q, ...)
+              - metavariable-regex:
+                  metavariable: $EXEC
+                  regex: ^(Query|QueryRow|Exec|Prepare)$
+          - patterns:
+              - pattern-either:
+                  - pattern: $DB.$EXEC($CTX, fmt.Sprintf(...), ...)
+                  - pattern: $DB.$EXEC($CTX, "..." + $X, ...)
+                  - pattern: $DB.$EXEC($CTX, "..." + $X + $Y, ...)
+                  - patterns:
+                      - pattern-inside: |
+                          $Q := fmt.Sprintf(...)
+                          ...
+                      - pattern: $DB.$EXEC($CTX, $Q, ...)
+                  - patterns:
+                      - pattern-inside: |
+                          $Q := "..." + $X
+                          ...
+                      - pattern: $DB.$EXEC($CTX, $Q, ...)
+              - metavariable-regex:
+                  metavariable: $EXEC
+                  regex: ^(QueryContext|QueryRowContext|ExecContext|PrepareContext|Query|QueryRow|Exec)$
+              # pgx takes the context first on Query, QueryRow and Exec.
+              - metavariable-regex:
+                  metavariable: $CTX
+                  regex: ^(ctx|.*[cC]ontext.*)$
+
+  - id: go-weak-crypto
+    languages: [go]
+    severity: WARNING
+    message: >-
+      MD5, SHA-1, DES, 3DES and RC4 are broken for security use. Use crypto/sha256 for digests and
+      AES-GCM (crypto/cipher.NewGCM) for encryption. For non-security ids, prefer a non-crypto hash
+      (hash/fnv) so the intent is clear.
+    metadata:
+      category: security
+      bug-class: weak-crypto
+      cwe: ["CWE-327: Use of a Broken or Risky Cryptographic Algorithm"]
+      owasp: ["A02:2021 - Cryptographic Failures"]
+      confidence: MEDIUM
+      safe-pattern: sha256.Sum256(data); cipher.NewGCM(block) with a random nonce.
+      references:
+        - https://pkg.go.dev/crypto/md5
+    pattern-either:
+      - pattern: md5.New()
+      - pattern: md5.Sum(...)
+      - pattern: sha1.New()
+      - pattern: sha1.Sum(...)
+      - pattern: des.NewCipher(...)
+      - pattern: des.NewTripleDESCipher(...)
+      - pattern: rc4.NewCipher(...)
+
+  - id: go-tainted-sql
+    mode: taint
+    languages: [go]
+    severity: ERROR
+    message: >-
+      HTTP request input reaches the SQL text of a query without a sanitizer. Pass it as a
+      placeholder argument (db.QueryContext(ctx, "... WHERE id = ?", v)) or parse it with strconv.
+    metadata:
+      category: security
+      bug-class: sql-injection
+      cwe: ["CWE-89: Improper Neutralization of Special Elements used in an SQL Command"]
+      owasp: ["A03:2021 - Injection"]
+      confidence: HIGH
+      safe-pattern: Placeholders; only the arguments after the SQL text may carry request data.
+      references:
+        - https://go.dev/doc/database/sql-injection
+    pattern-sources: &go-request-sources
+      - pattern: "($R : *http.Request).FormValue(...)"
+      - pattern: "($R : *http.Request).PostFormValue(...)"
+      - pattern: "($R : *http.Request).PathValue(...)"
+      - pattern: "($R : *http.Request).URL.Query()"
+      - pattern: "($R : *http.Request).URL.Path"
+      - pattern: "($R : *http.Request).URL.RawQuery"
+      - pattern: "($R : *http.Request).Header"
+      - pattern: "($R : *http.Request).Body"
+      - pattern: "($R : *http.Request).Form"
+    pattern-sinks:
+      - patterns:
+          - pattern: $DB.$EXEC($QUERY, ...)
+          - metavariable-regex:
+              metavariable: $EXEC
+              regex: ^(Query|QueryRow|Exec|Prepare)$
+          - focus-metavariable: $QUERY
+      - patterns:
+          - pattern: $DB.$EXEC($CTX, $QUERY, ...)
+          - metavariable-regex:
+              metavariable: $EXEC
+              regex: ^(QueryContext|QueryRowContext|ExecContext|PrepareContext|Query|QueryRow|Exec)$
+          # pgx takes the context first on Query, QueryRow and Exec; database/sql never does.
+          - metavariable-regex:
+              metavariable: $CTX
+              regex: ^(ctx|.*[cC]ontext.*)$
+          - focus-metavariable: $QUERY
+    pattern-sanitizers: &go-scalar-sanitizers
+      - pattern: strconv.Atoi(...)
+      - pattern: strconv.ParseInt(...)
+      - pattern: strconv.ParseUint(...)
+      - pattern: strconv.ParseFloat(...)
+      - pattern: strconv.ParseBool(...)
+      - pattern: uuid.Parse(...)
+
+  - id: go-tainted-shell
+    mode: taint
+    languages: [go]
+    severity: ERROR
+    message: >-
+      HTTP request input reaches a shell command line without a sanitizer. Call the program
+      directly with separate arguments (exec.CommandContext(ctx, "git", "log", v)), not through
+      sh -c.
+    metadata:
+      category: security
+      bug-class: command-injection
+      cwe: ["CWE-78: Improper Neutralization of Special Elements used in an OS Command"]
+      owasp: ["A03:2021 - Injection"]
+      confidence: HIGH
+      safe-pattern: exec.CommandContext(ctx, program, arg1, arg2) without a shell.
+      references:
+        - https://pkg.go.dev/os/exec
+    pattern-sources: *go-request-sources
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: exec.Command($SH, $FLAG, $CMD, ...)
+              - pattern: exec.CommandContext($CTX, $SH, $FLAG, $CMD, ...)
+          - metavariable-regex:
+              metavariable: $SH
+              regex: ^"(/bin/)?(sh|bash|zsh|cmd|cmd\.exe|powershell|pwsh)"$
+          - metavariable-regex:
+              metavariable: $FLAG
+              regex: ^"(-c|/c|/C|-Command)"$
+          - focus-metavariable: $CMD
+    pattern-sanitizers: *go-scalar-sanitizers

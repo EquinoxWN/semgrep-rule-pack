@@ -1,0 +1,101 @@
+rules:
+  - id: python-tainted-sql
+    mode: taint
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Request input reaches the SQL text of $SINK without a sanitizer. Pass it as a bound parameter
+      (cursor.execute("... WHERE id = ?", (value,))) or convert it with int() first.
+    metadata:
+      category: security
+      bug-class: sql-injection
+      cwe: ["CWE-89: Improper Neutralization of Special Elements used in an SQL Command"]
+      owasp: ["A03:2021 - Injection"]
+      confidence: HIGH
+      safe-pattern: Bound parameters; only the second argument of execute() may carry request data.
+      references:
+        - https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html
+    pattern-sources: &python-request-sources
+      - pattern: flask.request.$ATTR
+      - pattern: flask.request.get_json(...)
+      - patterns:
+          - pattern: $REQ.$ATTR
+          - metavariable-regex:
+              metavariable: $REQ
+              regex: ^request$
+          - metavariable-regex:
+              metavariable: $ATTR
+              regex: ^(GET|POST|body|COOKIES|headers|META|FILES|query_params|path_params|data)$
+      - patterns:
+          - pattern-inside: |
+              @$APP.$METHOD(...)
+              def $HANDLER(..., $PARAM: $TYPE, ...): ...
+          - focus-metavariable: $PARAM
+          - metavariable-regex:
+              metavariable: $METHOD
+              regex: ^(get|post|put|patch|delete|route|api_route)$
+          - metavariable-regex:
+              metavariable: $TYPE
+              regex: ^(str|Optional\[str\]|str \| None)$
+      - patterns:
+          - pattern-inside: |
+              @$APP.$METHOD(...)
+              async def $HANDLER(..., $PARAM: $TYPE, ...): ...
+          - focus-metavariable: $PARAM
+          - metavariable-regex:
+              metavariable: $METHOD
+              regex: ^(get|post|put|patch|delete|route|api_route)$
+          - metavariable-regex:
+              metavariable: $TYPE
+              regex: ^(str|Optional\[str\]|str \| None)$
+    pattern-sinks:
+      - patterns:
+          - pattern: $DB.$SINK($QUERY, ...)
+          - metavariable-regex:
+              metavariable: $SINK
+              regex: ^(execute|executemany|executescript|exec_driver_sql|raw|mogrify)$
+          - focus-metavariable: $QUERY
+      - patterns:
+          - pattern: sqlalchemy.text($QUERY)
+          - focus-metavariable: $QUERY
+    pattern-sanitizers: &python-scalar-sanitizers
+      - pattern: int(...)
+      - pattern: float(...)
+      - pattern: uuid.UUID(...)
+      - pattern: psycopg.sql.Identifier(...)
+      - pattern: psycopg2.sql.Identifier(...)
+
+  - id: python-tainted-shell
+    mode: taint
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Request input reaches a shell command without a sanitizer. Run the program with an argument
+      list and no shell (subprocess.run(["git", "log", value])), or quote the value with
+      shlex.quote().
+    metadata:
+      category: security
+      bug-class: command-injection
+      cwe: ["CWE-78: Improper Neutralization of Special Elements used in an OS Command"]
+      owasp: ["A03:2021 - Injection"]
+      confidence: HIGH
+      safe-pattern: subprocess.run([program, arg1, arg2], check=True) without shell=True.
+      references:
+        - https://docs.python.org/3/library/subprocess.html#security-considerations
+    pattern-sources: *python-request-sources
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: os.system($CMD)
+              - pattern: os.popen($CMD, ...)
+              - pattern: subprocess.getoutput($CMD)
+              - pattern: subprocess.getstatusoutput($CMD)
+              - pattern: subprocess.$FN($CMD, ..., shell=True, ...)
+              - pattern: subprocess.$FN(["sh", "-c", $CMD, ...], ...)
+              - pattern: subprocess.$FN(["bash", "-c", $CMD, ...], ...)
+          - focus-metavariable: $CMD
+    pattern-sanitizers:
+      - pattern: shlex.quote(...)
+      - pattern: shlex.join(...)
+      - pattern: int(...)
+      - pattern: float(...)

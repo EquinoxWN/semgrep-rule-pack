@@ -1,0 +1,73 @@
+rules:
+  - id: python-pickle-deserialization
+    languages: [python]
+    severity: ERROR
+    message: >-
+      $MOD.$FN() runs code chosen by whoever wrote the bytes it reads. Never unpickle data that
+      crossed a trust boundary; use JSON (or another data-only format) and validate it.
+    metadata:
+      category: security
+      bug-class: unsafe-deserialization
+      cwe: ["CWE-502: Deserialization of Untrusted Data"]
+      owasp: ["A08:2021 - Software and Data Integrity Failures"]
+      confidence: MEDIUM
+      safe-pattern: json.loads plus schema validation; safetensors for model weights.
+      references:
+        - https://docs.python.org/3/library/pickle.html#restricting-globals
+    patterns:
+      - pattern-either:
+          - pattern: $MOD.$FN(...)
+      - metavariable-regex:
+          metavariable: $MOD
+          regex: ^(pickle|_pickle|cPickle|dill|cloudpickle|marshal|jsonpickle|joblib|shelve)$
+      - metavariable-regex:
+          metavariable: $FN
+          regex: ^(load|loads|decode|open|Unpickler)$
+
+  - id: python-yaml-unsafe-load
+    languages: [python]
+    severity: ERROR
+    message: >-
+      This YAML call can build arbitrary Python objects (for example a tag that calls os.system).
+      Use yaml.safe_load(), or yaml.load() with yaml.SafeLoader or a subclass of it.
+    metadata:
+      category: security
+      bug-class: unsafe-deserialization
+      cwe: ["CWE-502: Deserialization of Untrusted Data"]
+      owasp: ["A08:2021 - Software and Data Integrity Failures"]
+      confidence: HIGH
+      safe-pattern: yaml.safe_load(text) or yaml.load(text, Loader=yaml.SafeLoader).
+      references:
+        - https://pyyaml.org/wiki/PyYAMLDocumentation
+    pattern-either:
+      - pattern: yaml.unsafe_load(...)
+      - pattern: yaml.unsafe_load_all(...)
+      - pattern: yaml.load(..., Loader=yaml.Loader, ...)
+      - pattern: yaml.load(..., Loader=yaml.UnsafeLoader, ...)
+      - pattern: yaml.load(..., Loader=yaml.FullLoader, ...)
+      - pattern: yaml.load_all(..., Loader=yaml.Loader, ...)
+      - pattern: yaml.load_all(..., Loader=yaml.UnsafeLoader, ...)
+      - patterns:
+          - pattern: yaml.load($DOC)
+      - patterns:
+          - pattern: yaml.load_all($DOC)
+
+  - id: python-torch-load-unsafe
+    languages: [python]
+    severity: ERROR
+    message: >-
+      torch.load(weights_only=False) unpickles arbitrary objects, so a downloaded checkpoint can run
+      code. Keep weights_only=True (the default since PyTorch 2.6) or store weights as safetensors.
+    metadata:
+      category: security
+      bug-class: unsafe-deserialization
+      cwe: ["CWE-502: Deserialization of Untrusted Data"]
+      owasp: ["A08:2021 - Software and Data Integrity Failures"]
+      confidence: HIGH
+      safe-pattern: torch.load(path, weights_only=True) or safetensors.torch.load_file(path).
+      references:
+        - https://pytorch.org/docs/stable/generated/torch.load.html
+    pattern-either:
+      - pattern: torch.load(..., weights_only=False, ...)
+      - pattern: numpy.load(..., allow_pickle=True, ...)
+      - pattern: pandas.read_pickle(...)
