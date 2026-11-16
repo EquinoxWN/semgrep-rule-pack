@@ -21,9 +21,10 @@ rules-test:
 bench: rules-test
 
 # Known vulnerabilities in the installed Python dependencies. The ignored advisories are in
-# mcp 1.29.0 and opentelemetry-api 1.37.0, which semgrep 1.184.0 (the latest release) pins exactly;
-# see docs/results/m1.md. Remove an ignore as soon as a semgrep release lifts the pin.
-AUDIT_IGNORE = --ignore-vuln CVE-2026-59951 --ignore-vuln CVE-2026-116685 --ignore-vuln CVE-2026-116684 --ignore-vuln CVE-2026-116686 --ignore-vuln CVE-2026-114603
+# mcp 1.29.0 and opentelemetry-api 1.37.0, which semgrep 1.184.0 pins exactly (1.185.0, the latest
+# release on 2026-11-16, keeps both pins); see docs/results/m1.md. Remove an ignore as soon as a
+# semgrep release lifts the pin.
+AUDIT_IGNORE = --ignore-vuln CVE-2026-59951 --ignore-vuln CVE-2026-116685 --ignore-vuln CVE-2026-116684 --ignore-vuln CVE-2026-116686 --ignore-vuln CVE-2026-114603 --ignore-vuln CVE-2026-126360
 audit:
 	$(PY) -m pip_audit --skip-editable --cache-dir .tmp/pip-audit $(AUDIT_IGNORE)
 
